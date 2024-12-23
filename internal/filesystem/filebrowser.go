@@ -5,12 +5,15 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type FileBrowser struct {
-	currentPath      string
-	currentPathEntry os.DirEntry
-	dirEntries       []os.DirEntry
+	currentPath           string
+	currentPathEntry      os.DirEntry
+	dirEntries            []os.DirEntry
+	dirEntriesFilter      []os.DirEntry
+	dirEntriesSearchIndex map[string]os.DirEntry
 }
 
 type dirEntry struct {
@@ -48,10 +51,16 @@ func NewFileBrowser(initialDir string) *FileBrowser {
 	}
 
 	f := &FileBrowser{
-		currentPath:      initialDir,
-		currentPathEntry: initialDirEntry,
+		currentPath:           initialDir,
+		currentPathEntry:      initialDirEntry,
+		dirEntriesSearchIndex: make(map[string]os.DirEntry),
 	}
 	f.dirEntries = f.listDir()
+	f.dirEntriesFilter = f.listDir()
+	err := f.buildSearchIndex()
+	if err != nil {
+		return nil
+	}
 	return f
 }
 
@@ -65,6 +74,10 @@ func (f *FileBrowser) CurrentPathEntry() os.DirEntry {
 
 func (f *FileBrowser) DirEntries() []os.DirEntry {
 	return f.dirEntries
+}
+
+func (f *FileBrowser) DirEntriesFilter() []os.DirEntry {
+	return f.dirEntriesFilter
 }
 
 func (f *FileBrowser) SetCurrentDirEntry(name string) error {
@@ -104,6 +117,11 @@ func (f *FileBrowser) NavigateInto(name string) error {
 					isDir: true,
 				}
 				f.dirEntries = f.listDir()
+				err := f.buildSearchIndex()
+				if err != nil {
+					return err
+				}
+
 				return nil
 			} else {
 				return fmt.Errorf("Error: Cannot access directory %s: %v", name, err)
@@ -126,6 +144,10 @@ func (f *FileBrowser) NavigateUp() error {
 		isDir: true,
 	}
 	f.dirEntries = f.listDir()
+	err := f.buildSearchIndex()
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -155,9 +177,38 @@ func (f *FileBrowser) GetFullPath(name string) string {
 }
 
 func (f *FileBrowser) buildSearchIndex() error {
+	f.dirEntriesFilter = f.dirEntries
+	f.dirEntriesSearchIndex = make(map[string]os.DirEntry)
+
+	for _, entry := range f.dirEntries {
+		absolutePath := filepath.Join(f.currentPath, entry.Name())
+		f.dirEntriesSearchIndex[absolutePath] = entry
+	}
 	return nil
 }
 
-func (f *FileBrowser) Search(searchInput string) string {
-	return searchInput
+func (f *FileBrowser) Search(searchInput string) {
+	if len(searchInput) < 1 {
+		f.dirEntriesFilter = f.dirEntries
+		return
+	}
+	terms := strings.Fields(searchInput)
+	matchedEntriesList := []os.DirEntry{}
+
+	currentPathPrefix := f.currentPath + string(os.PathSeparator)
+
+	for _, searchTerm := range terms {
+
+		for absolutePath, dirEntry := range f.dirEntriesSearchIndex {
+			if strings.Contains(absolutePath, searchTerm) && strings.HasPrefix(absolutePath, currentPathPrefix) {
+				matchedEntriesList = append(matchedEntriesList, dirEntry)
+			}
+		}
+	}
+
+	if len(matchedEntriesList) == 0 {
+		f.dirEntriesFilter = []os.DirEntry{}
+	} else {
+		f.dirEntriesFilter = matchedEntriesList
+	}
 }

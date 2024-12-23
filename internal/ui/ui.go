@@ -2,10 +2,11 @@ package ui
 
 import (
 	"Clif/internal/filesystem"
-	"github.com/gdamore/tcell/v2"
-	"github.com/rivo/tview"
 	"log"
 	"os"
+
+	"github.com/gdamore/tcell/v2"
+	"github.com/rivo/tview"
 )
 
 type UI struct {
@@ -26,10 +27,19 @@ func NewUI(fileBrowser *filesystem.FileBrowser) *UI {
 
 func (ui *UI) Run() {
 	ui.displayDirectory()
+	err := ui.app.Run()
+
+	if err != nil {
+		log.Fatal(err)
+	}
 }
 
 func (ui *UI) displayDirectory() {
-	files := ui.fileBrowser.DirEntries()
+	files := ui.fileBrowser.DirEntriesFilter()
+
+	if len(files) == 0 {
+		files = []os.DirEntry{}
+	}
 
 	list := tview.NewList().ShowSecondaryText(false)
 
@@ -63,14 +73,15 @@ func (ui *UI) displayDirectory() {
 	})
 
 	ui.searchInput.SetLabel("Search: ").
-		SetChangedFunc(func(text string) {
-
-		}).
 		SetDoneFunc(func(key tcell.Key) {
 			if key == tcell.KeyEscape {
 				ui.app.SetFocus(list)
+			} else if key == tcell.KeyEnter {
+				ui.fileBrowser.Search(ui.searchInput.GetText())
+				ui.displayDirectory()
 			}
 		})
+
 	ui.searchInput.
 		SetFieldBackgroundColor(tcell.ColorBlack).
 		SetFieldTextColor(tcell.ColorWhite).
@@ -83,10 +94,6 @@ func (ui *UI) displayDirectory() {
 			ui.app.SetFocus(ui.searchInput)
 			return nil
 		}
-		switch event.Key() {
-		case tcell.KeyEnter:
-			ui.fileBrowser.Search(ui.searchInput.GetText())
-		}
 		return event
 	})
 
@@ -95,14 +102,9 @@ func (ui *UI) displayDirectory() {
 		AddItem(ui.searchInput, 1, 0, true).
 		AddItem(list, 0, 1, false)
 
-	ui.updateStatusBox(true)
-
 	ui.app.SetRoot(flex, true).SetFocus(list)
-	err := ui.app.Run()
 
-	if err != nil {
-		log.Fatal(err)
-	}
+	ui.updateStatusBox(true)
 }
 
 func (ui *UI) displayFile(name string) {
